@@ -1,7 +1,8 @@
 # ctalearn
 
 [![CI](https://github.com/fffelix-huang/ctalearn/actions/workflows/ci.yml/badge.svg)](https://github.com/fffelix-huang/ctalearn/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.13%20%7C%203.14-blue.svg)](https://www.python.org/)
+[![PyPI](https://img.shields.io/pypi/v/ctalearn.svg)](https://pypi.org/project/ctalearn/)
+[![Python](https://img.shields.io/pypi/pyversions/ctalearn.svg)](https://pypi.org/project/ctalearn/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A cross-sectional / time-series **alpha research toolkit** for CTA strategies.
@@ -30,11 +31,11 @@ DSL for expressing alphas as plain text.
 
 ## Installation
 
-Requires Python 3.13+. Add it to your project straight from GitHub
-(managed with [uv](https://docs.astral.sh/uv/)):
+Requires Python 3.11+.
 
 ```bash
-uv add git+https://github.com/fffelix-huang/ctalearn.git
+pip install ctalearn
+uv add ctalearn        # with uv
 ```
 
 ## Quick start
