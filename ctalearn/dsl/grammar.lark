@@ -1,0 +1,29 @@
+start: (statement | empty_stmt)* return_stmt
+
+statement: CNAME "=" expr ";"
+empty_stmt: ";"
+return_stmt: "return" expr ";"
+
+?expr: term
+     | expr "+" term   -> add
+     | expr "-" term   -> sub
+
+?term: factor
+     | term "*" factor -> mul
+     | term "/" factor -> div
+
+?factor: NUMBER        -> number
+       | CNAME "(" [expr ("," expr)*] ")" -> func_call
+       | CNAME         -> variable
+       | "-" factor    -> neg
+       | "(" expr ")"
+
+%import common.CNAME   // variable names
+// Integer or decimal float only; no exponent form (1e5) — keeps the int/float
+// split a simple "has a dot?" check and rejects unsupported syntax at parse time.
+NUMBER: /\d+(\.\d+)?/
+%import common.WS
+%ignore WS             // ignore all spaces and newlines
+
+COMMENT: /#[^\n]*/
+%ignore COMMENT

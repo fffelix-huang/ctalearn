@@ -1,0 +1,64 @@
+site_name: ctalearn
+site_description: A cross-sectional / time-series alpha research toolkit for CTA strategies
+repo_url: https://github.com/fffelix-huang/ctalearn
+repo_name: fffelix-huang/ctalearn
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            merge_init_into_class: true
+            filters: ["!^_"]
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - DSL Guide: dsl.md
+  - API Reference:
+      - DataFrame: api/dataframe.md
+      - Operators: api/operators.md
+      - DSL: api/dsl.md
+      - Data: api/data.md
+      - Metrics: api/metrics.md
+      - Preprocess: api/preprocess.md
+      - Testing: api/testing.md
