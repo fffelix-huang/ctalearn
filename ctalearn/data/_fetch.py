@@ -100,9 +100,13 @@ def fetch_glassnode(
         response = client.get(url, params=all_params)
         response.raise_for_status()
 
-        pl_df = pl.read_csv(io.BytesIO(response.content)).with_columns(
-            pl.from_epoch("timestamp", time_unit="s")
-        )
+        # infer_schema_length=None scans the whole file before picking dtypes.
+        # Glassnode columns like volume mix integer-looking and decimal values;
+        # the default 100-row inference can guess i64 and then fail on a later
+        # float.
+        pl_df = pl.read_csv(
+            io.BytesIO(response.content), infer_schema_length=None
+        ).with_columns(pl.from_epoch("timestamp", time_unit="s"))
 
         if cache_path:
             pl_df.write_parquet(cache_path)
