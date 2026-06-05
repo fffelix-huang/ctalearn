@@ -3,7 +3,7 @@ from typing import Any
 from lark import Token, Transformer, v_args
 
 from ctalearn.dsl.exceptions import DslTypeError
-from ctalearn.dsl.schema import Arg, DslType, resolve_binop_type
+from ctalearn.dsl.schema import DslType, match_signature, resolve_binop_type
 
 
 @v_args(inline=True)
@@ -13,15 +13,16 @@ class TypeCheckTransformer(Transformer[Any, DslType]):
     def __init__(
         self,
         factor_schema: dict[str, DslType],
-        function_schema: dict[str, dict[str, Any]],
+        function_schema: dict[str, list[dict[str, Any]]],
     ) -> None:
         """Initialize the type checker with provided schemas.
 
         Args:
             factor_schema: A dictionary mapping factor names to their expected DslType.
-            function_schema: A dictionary mapping function names to
-            {"args": list[Arg], "return": DslType}. Optional args (those carrying a
-            default) must be trailing.
+            function_schema: A dictionary mapping function names to a list of
+            overloads, each `{"args": list[Arg], "return": DslType}`. Order matters:
+            first matching overload wins. Optional args (those carrying a default)
+            must be trailing within each overload.
         """
         super().__init__()
         self.factor_schema = factor_schema
@@ -85,49 +86,31 @@ class TypeCheckTransformer(Transformer[Any, DslType]):
         return val_type
 
     def func_call(self, func_name_token: Token, *args_types: DslType) -> DslType:
-        """Validate argument types and infer the return type of a function call.
+        """Resolve overloads and infer the return type of a function call.
 
         Args:
             func_name_token: The parsed function name token.
             *args_types: The inferred types of the arguments passed to the function.
 
         Returns:
-            The predefined return type of the function.
+            The return type of the first overload whose signature accepts
+            `args_types`.
 
         Raises:
-            DslTypeError: If the function is unknown or argument types mismatch.
+            DslTypeError: If the function is unknown or no overload accepts the
+            given arg types.
         """
         func_name = func_name_token.value
         if func_name not in self.function_schema:
             raise DslTypeError(f"Unknown function: '{func_name}'")
 
-        params: list[Arg] = self.function_schema[func_name]["args"]
-        required = sum(1 for p in params if p.required)
+        actual = list(args_types)
+        for overload in self.function_schema[func_name]:
+            if match_signature(overload["args"], actual):
+                return_type: DslType = overload["return"]
+                return return_type
 
-        if not (required <= len(args_types) <= len(params)):
-            expected = (
-                str(required)
-                if required == len(params)
-                else f"{required}-{len(params)}"
-            )
-            raise DslTypeError(
-                f"Function '{func_name}' expect {expected} arguments,"
-                f" got {len(args_types)}"
-            )
-
-        # zip stops at the supplied count, so omitted optional args are not checked.
-        for i, (actual, param) in enumerate(zip(args_types, params)):
-            if param.type == DslType.FLOAT and actual == DslType.INT:
-                continue
-
-            if actual != param.type:
-                raise DslTypeError(
-                    f"Function '{func_name}' {i + 1}-th argument should be"
-                    f" {param.type.value}, got {actual.value}"
-                )
-
-        return_type: DslType = self.function_schema[func_name]["return"]
-        return return_type
+        raise DslTypeError(f"No matching overload for '{func_name}'")
 
     def statement(self, var_name_token: Token, expr_type: DslType) -> None:
         """Register a variable assignment type into the local environment.

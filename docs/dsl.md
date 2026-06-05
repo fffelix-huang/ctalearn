@@ -74,19 +74,22 @@ You supply two project-specific maps; the function side comes from the library:
 You do **not** hand-write function signatures. The library exposes its operator
 registry as a single source of truth:
 
-- **`BUILTIN_FUNCTIONS`** — `dict[str, Callable]`, the runtime operators fed to
-  `ExecutionTransformer`.
-- **`BUILTIN_FUNCTION_SCHEMA`** — `dict[str, {"args": list[Arg], "return": DslType}]`,
-  the type signatures fed to `TypeCheckTransformer`.
+- **`BUILTIN_FUNCTIONS`** — `dict[str, list[tuple[Callable, list[Arg]]]]`, the
+  runtime operators fed to `ExecutionTransformer`. Each name maps to a list of
+  overloads `(callable, params)`; first whose params accept the actual arg types
+  is dispatched.
+- **`BUILTIN_FUNCTION_SCHEMA`** — `dict[str, list[{"args": list[Arg], "return": DslType}]]`,
+  the type signatures fed to `TypeCheckTransformer`. Same name -> list-of-overloads
+  shape.
 
 Both dicts share identical keys. Introspect them at runtime:
 
 ```python
 from ctalearn.dsl import BUILTIN_FUNCTION_SCHEMA
 
-spec = BUILTIN_FUNCTION_SCHEMA["ts_mean"]
-spec["args"]    # [Arg(type=DslType.DATAFRAME), Arg(type=DslType.INT)]
-spec["return"]  # DslType.DATAFRAME
+overloads = BUILTIN_FUNCTION_SCHEMA["ts_mean"]
+overloads[0]["args"]    # [Arg(type=DslType.DATAFRAME), Arg(type=DslType.INT)]
+overloads[0]["return"]  # DslType.DATAFRAME
 ```
 
 Each [`Arg`](api/dsl.md) carries a `type` and `.required` (false when it has a
@@ -96,8 +99,10 @@ default). The signatures below are derived from this schema:
 |---|---|
 | `sign(DataFrame)` | `DataFrame` |
 | `log(DataFrame)` | `DataFrame` |
+| `log(float)` | `float` |
 | `symmetric_log(DataFrame)` | `DataFrame` |
 | `sqrt(DataFrame)` | `DataFrame` |
+| `sqrt(float)` | `float` |
 | `symmetric_sqrt(DataFrame)` | `DataFrame` |
 | `cbrt(DataFrame)` | `DataFrame` |
 | `identity(DataFrame)` | `DataFrame` |

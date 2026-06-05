@@ -33,6 +33,32 @@ class Arg:
         return self.default is _MISSING
 
 
+def match_signature(params: list[Arg], actual: list[DslType]) -> bool:
+    """Check if `actual` arg types satisfy `params` (with INT->FLOAT widening).
+
+    Shared by the analyzer (static check) and interpreter (runtime dispatch) so
+    overload resolution agrees in both passes.
+
+    Args:
+        params: The declared parameter signature of one overload.
+        actual: The inferred types of the call site's arguments.
+
+    Returns:
+        True iff arity is within [required, len(params)] and every supplied
+        argument is type-compatible (exact match or INT supplied to FLOAT param).
+    """
+    required = sum(1 for p in params if p.required)
+    if not (required <= len(actual) <= len(params)):
+        return False
+    for a, p in zip(actual, params):
+        if a == p.type:
+            continue
+        if p.type == DslType.FLOAT and a == DslType.INT:
+            continue
+        return False
+    return True
+
+
 def resolve_binop_type(left: DslType, right: DslType) -> DslType:
     """Resolve the resulting type of a binary operation.
 

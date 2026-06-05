@@ -17,7 +17,7 @@ class TestAnalyzer:
     """Test suite for static type checking (TypeCheckTransformer)."""
 
     def test_success(
-        self, schema_env: tuple[dict[str, DslType], dict[str, dict[str, Any]]]
+        self, schema_env: tuple[dict[str, DslType], dict[str, list[dict[str, Any]]]]
     ) -> None:
         """Ensure a valid AST passes type checking and returns the correct type."""
         factor_schema, func_schema = schema_env
@@ -34,7 +34,7 @@ class TestAnalyzer:
         assert result_type == DslType.DATAFRAME
 
     def test_incorrect_return_type(
-        self, schema_env: tuple[dict[str, DslType], dict[str, dict[str, Any]]]
+        self, schema_env: tuple[dict[str, DslType], dict[str, list[dict[str, Any]]]]
     ) -> None:
         """Ensure an error is raised if the final returned type is not a DataFrame."""
         factor_schema, func_schema = schema_env
@@ -53,7 +53,7 @@ class TestAnalyzer:
         assert "Return type should be DataFrame" in str(exc_info.value.orig_exc)
 
     def test_function_argument_type_mismatch(
-        self, schema_env: tuple[dict[str, DslType], dict[str, dict[str, Any]]]
+        self, schema_env: tuple[dict[str, DslType], dict[str, list[dict[str, Any]]]]
     ) -> None:
         """Ensure an error is raised if function arguments have incorrect types."""
         factor_schema, func_schema = schema_env
@@ -67,10 +67,10 @@ class TestAnalyzer:
             checker.transform(tree)
 
         assert isinstance(exc_info.value.orig_exc, DslTypeError)
-        assert "2-th argument should be int" in str(exc_info.value.orig_exc)
+        assert "No matching overload for 'ts_zscore'" in str(exc_info.value.orig_exc)
 
     def test_undefined_variable(
-        self, schema_env: tuple[dict[str, DslType], dict[str, dict[str, Any]]]
+        self, schema_env: tuple[dict[str, DslType], dict[str, list[dict[str, Any]]]]
     ) -> None:
         """Ensure an error is raised when an undefined variable is referenced."""
         factor_schema, func_schema = schema_env
@@ -86,7 +86,7 @@ class TestAnalyzer:
         assert "Unknown variable: 'invalid_factor'" in str(exc_info.value.orig_exc)
 
     def test_undefined_function(
-        self, schema_env: tuple[dict[str, DslType], dict[str, dict[str, Any]]]
+        self, schema_env: tuple[dict[str, DslType], dict[str, list[dict[str, Any]]]]
     ) -> None:
         """Ensure an error is raised when an undefined function is called."""
         factor_schema, func_schema = schema_env
@@ -105,7 +105,7 @@ class TestAnalyzer:
         assert "Unknown function: 'invalid_function'" in str(exc_info.value.orig_exc)
 
     def test_subtraction_typecheck(
-        self, schema_env: tuple[dict[str, DslType], dict[str, dict[str, Any]]]
+        self, schema_env: tuple[dict[str, DslType], dict[str, list[dict[str, Any]]]]
     ) -> None:
         """Subtraction resolves its operand types (the `sub` rule)."""
         factor_schema, func_schema = schema_env
@@ -115,7 +115,7 @@ class TestAnalyzer:
         assert checker.transform(tree) == DslType.DATAFRAME
 
     def test_float_scalar_promotes(
-        self, schema_env: tuple[dict[str, DslType], dict[str, dict[str, Any]]]
+        self, schema_env: tuple[dict[str, DslType], dict[str, list[dict[str, Any]]]]
     ) -> None:
         """A float-with-int scalar op (no DataFrame) resolves to FLOAT."""
         factor_schema, func_schema = schema_env
@@ -129,9 +129,9 @@ class TestAnalyzer:
         assert checker.transform(parser.parse(code)) == DslType.DATAFRAME
 
     def test_wrong_argument_count(
-        self, schema_env: tuple[dict[str, DslType], dict[str, dict[str, Any]]]
+        self, schema_env: tuple[dict[str, DslType], dict[str, list[dict[str, Any]]]]
     ) -> None:
-        """All-required function called with too many args reports an exact count."""
+        """A call whose arity matches no overload is rejected."""
         factor_schema, func_schema = schema_env
         checker = TypeCheckTransformer(factor_schema, func_schema)
 
@@ -140,16 +140,18 @@ class TestAnalyzer:
             checker.transform(parser.parse("return cs_rank(close, volume);"))
 
         assert isinstance(exc_info.value.orig_exc, DslTypeError)
-        assert "expect 1 arguments, got 2" in str(exc_info.value.orig_exc)
+        assert "No matching overload for 'cs_rank'" in str(exc_info.value.orig_exc)
 
     def test_optional_float_arg_accepts_int(self) -> None:
         """A FLOAT parameter accepts an INT argument; optional arg may be supplied."""
         factor_schema = {"close": DslType.DATAFRAME}
         func_schema = {
-            "scale": {
-                "args": [Arg(DslType.DATAFRAME), Arg(DslType.FLOAT, default=0.0)],
-                "return": DslType.DATAFRAME,
-            }
+            "scale": [
+                {
+                    "args": [Arg(DslType.DATAFRAME), Arg(DslType.FLOAT, default=0.0)],
+                    "return": DslType.DATAFRAME,
+                }
+            ]
         }
         checker = TypeCheckTransformer(factor_schema, func_schema)
 
@@ -158,13 +160,15 @@ class TestAnalyzer:
         assert checker.transform(tree) == DslType.DATAFRAME
 
     def test_optional_arg_too_many(self) -> None:
-        """Function with an optional arg reports a count range when over-supplied."""
+        """A call over-supplied with args matches no overload."""
         factor_schema = {"close": DslType.DATAFRAME}
         func_schema = {
-            "scale": {
-                "args": [Arg(DslType.DATAFRAME), Arg(DslType.FLOAT, default=0.0)],
-                "return": DslType.DATAFRAME,
-            }
+            "scale": [
+                {
+                    "args": [Arg(DslType.DATAFRAME), Arg(DslType.FLOAT, default=0.0)],
+                    "return": DslType.DATAFRAME,
+                }
+            ]
         }
         checker = TypeCheckTransformer(factor_schema, func_schema)
 
@@ -173,4 +177,37 @@ class TestAnalyzer:
             checker.transform(parser.parse("return scale(close, 1, 2);"))
 
         assert isinstance(exc_info.value.orig_exc, DslTypeError)
-        assert "expect 1-2 arguments, got 3" in str(exc_info.value.orig_exc)
+        assert "No matching overload for 'scale'" in str(exc_info.value.orig_exc)
+
+    def test_overload_dispatch_by_arg_type(self) -> None:
+        """Overloads with the same name and arity dispatch by arg type."""
+        factor_schema = {"close": DslType.DATAFRAME}
+        func_schema = {
+            "sqrt": [
+                {"args": [Arg(DslType.DATAFRAME)], "return": DslType.DATAFRAME},
+                {"args": [Arg(DslType.FLOAT)], "return": DslType.FLOAT},
+            ]
+        }
+        checker = TypeCheckTransformer(factor_schema, func_schema)
+
+        assert (
+            checker.transform(parser.parse("return sqrt(close);")) == DslType.DATAFRAME
+        )
+
+        # FLOAT overload picked; final return must still be DataFrame, so wrap it.
+        checker2 = TypeCheckTransformer(
+            factor_schema,
+            {
+                **func_schema,
+                "cs_rank": [
+                    {"args": [Arg(DslType.DATAFRAME)], "return": DslType.DATAFRAME}
+                ],
+            },
+        )
+        tree = parser.parse(
+            """
+            x = sqrt(4.0);
+            return cs_rank(close);
+            """
+        )
+        assert checker2.transform(tree) == DslType.DATAFRAME

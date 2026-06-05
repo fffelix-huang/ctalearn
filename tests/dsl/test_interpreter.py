@@ -7,6 +7,8 @@ from lark.exceptions import VisitError
 
 from ctalearn.core.dataframe import DataFrame
 from ctalearn.dsl import (
+    Arg,
+    DslType,
     ExecutionTransformer,
     parser,
 )
@@ -82,6 +84,79 @@ class TestInterpreter:
 
         assert isinstance(exc_info.value.orig_exc, DslRuntimeError)
 
+    def test_overload_dispatch_by_runtime_type(self) -> None:
+        """Multi-overload runtime: dispatch picks the callable by actual arg type."""
+        df_calls: list[Any] = []
+        scalar_calls: list[Any] = []
+
+        def df_sqrt(x: Any) -> Any:
+            df_calls.append(x)
+            return _make_df([1.0])
+
+        def scalar_sqrt(x: Any) -> Any:
+            scalar_calls.append(x)
+            return _make_df([float(x) ** 0.5])
+
+        functions = {
+            "sqrt": [
+                (df_sqrt, [Arg(DslType.DATAFRAME)]),
+                (scalar_sqrt, [Arg(DslType.FLOAT)]),
+            ],
+            # cs_rank wraps the scalar branch's result so the return is a DataFrame.
+            "cs_rank": [
+                (lambda v: v, [Arg(DslType.DATAFRAME)]),
+            ],
+        }
+        data_loaders = {"close": lambda: _make_df([4.0])}
+        interp = ExecutionTransformer(functions, data_loaders)
+
+        # DataFrame arg -> df_sqrt
+        interp.transform(parser.parse("return sqrt(close);"))
+        assert len(df_calls) == 1 and len(scalar_calls) == 0
+
+        # float arg -> scalar_sqrt (wrap in cs_rank to satisfy return-type rule)
+        ExecutionTransformer(functions, data_loaders).transform(
+            parser.parse("x = sqrt(9.0); return cs_rank(close);")
+        )
+        assert len(scalar_calls) == 1 and scalar_calls[0] == 9.0
+
+    def test_overload_dispatch_no_match_at_runtime(self) -> None:
+        """Defensive: when host skips analyzer and no overload fits, runtime raises."""
+        functions = {
+            # Neither overload accepts a FLOAT (INT doesn't widen to anything here).
+            "weird": [
+                (lambda x: x, [Arg(DslType.INT)]),
+                (lambda x: x, [Arg(DslType.DATAFRAME)]),
+            ],
+        }
+        interp = ExecutionTransformer(functions, {})
+
+        with pytest.raises(VisitError) as exc_info:
+            interp.transform(parser.parse("return weird(1.5);"))
+
+        assert isinstance(exc_info.value.orig_exc, DslRuntimeError)
+        assert "No matching overload for 'weird'" in str(exc_info.value.orig_exc)
+
+    def test_py_to_dsl_int_path(self) -> None:
+        """INT runtime arg maps to DslType.INT (covers the int branch in _py_to_dsl)."""
+        from ctalearn.dsl.interpreter import _py_to_dsl
+
+        assert _py_to_dsl(5) == DslType.INT
+
+    def test_py_to_dsl_rejects_bool(self) -> None:
+        """bool reaching runtime dispatch is a host bug (DSL has no bool literal)."""
+        from ctalearn.dsl.interpreter import _py_to_dsl
+
+        with pytest.raises(DslRuntimeError, match="bool is not a DSL value type"):
+            _py_to_dsl(True)
+
+    def test_py_to_dsl_rejects_unknown_type(self) -> None:
+        """Non-numeric, non-DataFrame runtime value is rejected."""
+        from ctalearn.dsl.interpreter import _py_to_dsl
+
+        with pytest.raises(DslRuntimeError, match="Unsupported runtime type"):
+            _py_to_dsl("not a dsl value")
+
     def test_arithmetic_operators(self) -> None:
         """+, -, *, / and unary - execute on DataFrame operands (the DSL's type)."""
         data_loaders = {
@@ -139,7 +214,7 @@ class TestInterpreter:
         def raising(df: Any) -> Any:
             raise ValueError("boom")
 
-        functions["cs_rank"] = raising
+        functions["cs_rank"] = [(raising, [Arg(DslType.DATAFRAME)])]
         interpreter = ExecutionTransformer(functions, data_loaders)
 
         with pytest.raises(VisitError) as exc_info:

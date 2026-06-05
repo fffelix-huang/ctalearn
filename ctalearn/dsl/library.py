@@ -6,15 +6,20 @@ callable (for `ExecutionTransformer`) and its type signature (for
 `data_loaders`; the function side comes from here.
 
 Conventions:
+- Each name maps to a list of overloads. Order matters: the first overload whose
+  signature accepts the supplied arg types wins (analyzer and interpreter use the
+  same `match_signature`).
 - `bool` parameters are omitted from the schema entirely. The grammar has no bool
   literal, so they can never be supplied from the DSL; the operator's own Python
   default applies at call time.
 - Operators the DSL cannot express are omitted from the registry, e.g. `cs_pca`
   (`Literal` `output` arg + tuple return) and `regression_neut` (list of factor
   DataFrames).
-- Optional args must be trailing (positional grammar); `_build` enforces this.
+- Optional args must be trailing (positional grammar); `_build` enforces this per
+  overload.
 """
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -54,72 +59,92 @@ DF = DslType.DATAFRAME
 INT = DslType.INT
 FLOAT = DslType.FLOAT
 
-# name -> (callable, [Arg, ...], return_type)
+# One overload: (callable, [Arg, ...], return_type)
 _Spec = tuple[Callable[..., Any], list[Arg], DslType]
 
-_SPECS: dict[str, _Spec] = {
+_SPECS: dict[str, list[_Spec]] = {
     # --- arithmetic (element-wise) ---
-    "sign": (sign, [Arg(DF)], DF),
-    "log": (log, [Arg(DF)], DF),
-    "symmetric_log": (symmetric_log, [Arg(DF)], DF),
-    "sqrt": (sqrt, [Arg(DF)], DF),
-    "symmetric_sqrt": (symmetric_sqrt, [Arg(DF)], DF),
-    "cbrt": (cbrt, [Arg(DF)], DF),
-    "identity": (identity, [Arg(DF)], DF),
+    "sign": [(sign, [Arg(DF)], DF)],
+    "log": [
+        (log, [Arg(DF)], DF),
+        (math.log, [Arg(FLOAT)], FLOAT),
+    ],
+    "symmetric_log": [(symmetric_log, [Arg(DF)], DF)],
+    "sqrt": [
+        (sqrt, [Arg(DF)], DF),
+        (math.sqrt, [Arg(FLOAT)], FLOAT),
+    ],
+    "symmetric_sqrt": [(symmetric_sqrt, [Arg(DF)], DF)],
+    "cbrt": [(cbrt, [Arg(DF)], DF)],
+    "identity": [(identity, [Arg(DF)], DF)],
     # --- cross-sectional (ignore_nan: bool omitted) ---
-    "cs_mean": (cs_mean, [Arg(DF)], DF),
-    "cs_rank": (cs_rank, [Arg(DF)], DF),
-    "cs_zscore": (cs_zscore, [Arg(DF)], DF),
-    "cs_winsorize": (cs_winsorize, [Arg(DF), Arg(FLOAT)], DF),
-    "vector_neut": (vector_neut, [Arg(DF), Arg(DF)], DF),
+    "cs_mean": [(cs_mean, [Arg(DF)], DF)],
+    "cs_rank": [(cs_rank, [Arg(DF)], DF)],
+    "cs_zscore": [(cs_zscore, [Arg(DF)], DF)],
+    "cs_winsorize": [(cs_winsorize, [Arg(DF), Arg(FLOAT)], DF)],
+    "vector_neut": [(vector_neut, [Arg(DF), Arg(DF)], DF)],
     # --- time-series ---
-    "ts_rank": (ts_rank, [Arg(DF), Arg(INT), Arg(FLOAT, default=0.0)], DF),
-    "ts_mean": (ts_mean, [Arg(DF), Arg(INT)], DF),
-    "ts_median": (ts_median, [Arg(DF), Arg(INT)], DF),
-    "ts_std_dev": (ts_std_dev, [Arg(DF), Arg(INT), Arg(INT, default=0)], DF),
-    "ts_zscore": (ts_zscore, [Arg(DF), Arg(INT)], DF),
-    "ts_robust_zscore": (ts_robust_zscore, [Arg(DF), Arg(INT)], DF),
-    "ts_sum": (ts_sum, [Arg(DF), Arg(INT)], DF),
-    "ts_min": (ts_min, [Arg(DF), Arg(INT)], DF),
-    "ts_max": (ts_max, [Arg(DF), Arg(INT)], DF),
-    "ts_scale": (ts_scale, [Arg(DF), Arg(INT), Arg(FLOAT, default=0.0)], DF),
-    "ts_decay_linear": (
-        ts_decay_linear,
-        [Arg(DF), Arg(INT)],
-        DF,
-    ),  # dense: bool omitted
-    "ts_delay": (ts_delay, [Arg(DF), Arg(INT)], DF),
-    "ts_delta": (ts_delta, [Arg(DF), Arg(INT)], DF),
-    "ts_ffill": (ts_ffill, [Arg(DF), Arg(INT, default=None)], DF),
-    "ts_corr": (ts_corr, [Arg(DF), Arg(DF), Arg(INT)], DF),
-    "ts_hurst_exponent": (
-        ts_hurst_exponent,
-        [Arg(DF), Arg(INT), Arg(INT, default=2), Arg(INT, default=20)],
-        DF,
-    ),
+    "ts_rank": [(ts_rank, [Arg(DF), Arg(INT), Arg(FLOAT, default=0.0)], DF)],
+    "ts_mean": [(ts_mean, [Arg(DF), Arg(INT)], DF)],
+    "ts_median": [(ts_median, [Arg(DF), Arg(INT)], DF)],
+    "ts_std_dev": [(ts_std_dev, [Arg(DF), Arg(INT), Arg(INT, default=0)], DF)],
+    "ts_zscore": [(ts_zscore, [Arg(DF), Arg(INT)], DF)],
+    "ts_robust_zscore": [(ts_robust_zscore, [Arg(DF), Arg(INT)], DF)],
+    "ts_sum": [(ts_sum, [Arg(DF), Arg(INT)], DF)],
+    "ts_min": [(ts_min, [Arg(DF), Arg(INT)], DF)],
+    "ts_max": [(ts_max, [Arg(DF), Arg(INT)], DF)],
+    "ts_scale": [(ts_scale, [Arg(DF), Arg(INT), Arg(FLOAT, default=0.0)], DF)],
+    # dense: bool omitted
+    "ts_decay_linear": [(ts_decay_linear, [Arg(DF), Arg(INT)], DF)],
+    "ts_delay": [(ts_delay, [Arg(DF), Arg(INT)], DF)],
+    "ts_delta": [(ts_delta, [Arg(DF), Arg(INT)], DF)],
+    "ts_ffill": [(ts_ffill, [Arg(DF), Arg(INT, default=None)], DF)],
+    "ts_corr": [(ts_corr, [Arg(DF), Arg(DF), Arg(INT)], DF)],
+    "ts_hurst_exponent": [
+        (
+            ts_hurst_exponent,
+            [Arg(DF), Arg(INT), Arg(INT, default=2), Arg(INT, default=20)],
+            DF,
+        )
+    ],
 }
 
 
-def _build() -> tuple[dict[str, Callable[..., Any]], dict[str, dict[str, Any]]]:
+# Per-overload signature exposed to the analyzer.
+OverloadSig = dict[str, Any]  # {"args": list[Arg], "return": DslType}
+# Per-overload (callable, params) tuple exposed to the interpreter.
+OverloadRun = tuple[Callable[..., Any], list[Arg]]
+
+
+def _build() -> tuple[dict[str, list[OverloadRun]], dict[str, list[OverloadSig]]]:
     """Derive the runtime and schema dicts from `_SPECS`, validating arg ordering.
 
     Returns:
-        A `(functions, function_schema)` pair sharing identical keys.
+        A `(functions, function_schema)` pair sharing identical keys. Both map
+        name -> list of overloads (analyzer gets `{"args", "return"}` dicts;
+        interpreter gets `(callable, args)` tuples).
 
     Raises:
-        ValueError: If any operator declares a required argument after an optional one.
+        ValueError: If any overload declares a required argument after an optional one.
     """
-    functions: dict[str, Callable[..., Any]] = {}
-    function_schema: dict[str, dict[str, Any]] = {}
-    for name, (func, args, ret) in _SPECS.items():
-        seen_optional = False
-        for arg in args:
-            if not arg.required:
-                seen_optional = True
-            elif seen_optional:
-                raise ValueError(f"'{name}': required argument after optional argument")
-        functions[name] = func
-        function_schema[name] = {"args": args, "return": ret}
+    functions: dict[str, list[OverloadRun]] = {}
+    function_schema: dict[str, list[OverloadSig]] = {}
+    for name, overloads in _SPECS.items():
+        run_list: list[OverloadRun] = []
+        sig_list: list[OverloadSig] = []
+        for func, args, ret in overloads:
+            seen_optional = False
+            for arg in args:
+                if not arg.required:
+                    seen_optional = True
+                elif seen_optional:
+                    raise ValueError(
+                        f"'{name}': required argument after optional argument"
+                    )
+            run_list.append((func, args))
+            sig_list.append({"args": args, "return": ret})
+        functions[name] = run_list
+        function_schema[name] = sig_list
     return functions, function_schema
 
 

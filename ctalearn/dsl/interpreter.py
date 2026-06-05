@@ -4,7 +4,27 @@ from typing import Any
 
 from lark import Token, Transformer, v_args
 
+from ctalearn.core.dataframe import DataFrame
 from ctalearn.dsl.exceptions import DslRuntimeError
+from ctalearn.dsl.schema import Arg, DslType, match_signature
+
+
+def _py_to_dsl(value: Any) -> DslType:
+    """Map a runtime Python value to its DslType for overload dispatch.
+
+    bool is rejected: the DSL grammar has no bool literal, so a bool here is a
+    host-side bug rather than a representable value. Checked before int because
+    `bool` is a subclass of `int` in Python.
+    """
+    if isinstance(value, DataFrame):
+        return DslType.DATAFRAME
+    if isinstance(value, bool):
+        raise DslRuntimeError(f"bool is not a DSL value type: {value!r}")
+    if isinstance(value, int):
+        return DslType.INT
+    if isinstance(value, float):
+        return DslType.FLOAT
+    raise DslRuntimeError(f"Unsupported runtime type: {type(value).__name__}")
 
 
 @v_args(inline=True)
@@ -13,13 +33,15 @@ class ExecutionTransformer(Transformer[Any, Any]):
 
     def __init__(
         self,
-        functions: dict[str, Callable[..., Any]],
+        functions: dict[str, list[tuple[Callable[..., Any], list[Arg]]]],
         data_loaders: dict[str, Callable[[], Any]],
     ) -> None:
         """Initialize the execution transformer.
 
         Args:
-            functions: A dictionary of registered underlying mathematical functions.
+            functions: A dictionary mapping function names to a list of overloads,
+            each `(callable, params)`. First overload whose params accept the
+            actual arg types is dispatched.
             data_loaders: A dictionary of lazy-loading callables to fetch data.
         """
         super().__init__()
@@ -99,11 +121,26 @@ class ExecutionTransformer(Transformer[Any, Any]):
             DslRuntimeError: If the underlying function crashes during execution.
         """
         func_name = func_name_token.value
-        func = self.functions.get(func_name)
-        if func is None:
+        overloads = self.functions.get(func_name)
+        if overloads is None:
             raise DslRuntimeError(f"Unknown function '{func_name}'")
+
+        # Single overload: analyzer already validated types; dispatch is trivial.
+        # Multi-overload: inspect runtime types to pick the right callable.
+        if len(overloads) == 1:
+            fn: Callable[..., Any] = overloads[0][0]
+        else:
+            actual = [_py_to_dsl(a) for a in args]
+            for cand, params in overloads:
+                if match_signature(params, actual):
+                    fn = cand
+                    break
+            else:
+                # Analyzer guarantees a match; reachable only if host bypassed it.
+                raise DslRuntimeError(f"No matching overload for '{func_name}'")
+
         try:
-            return func(*args)
+            return fn(*args)
         except Exception as e:
             raise DslRuntimeError(f"Failed to execution function '{func_name}': {e}")
 

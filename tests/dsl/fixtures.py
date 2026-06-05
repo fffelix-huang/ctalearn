@@ -7,7 +7,7 @@ from ctalearn.dsl.schema import Arg, DslType
 
 
 @pytest.fixture
-def schema_env() -> tuple[dict[str, DslType], dict[str, dict[str, Any]]]:
+def schema_env() -> tuple[dict[str, DslType], dict[str, list[dict[str, Any]]]]:
     """Provides factor and function schemas for static analysis.
 
     Returns:
@@ -21,14 +21,18 @@ def schema_env() -> tuple[dict[str, DslType], dict[str, dict[str, Any]]]:
         "volume": DslType.DATAFRAME,
     }
     function_schema = {
-        "ts_zscore": {
-            "args": [Arg(DslType.DATAFRAME), Arg(DslType.INT)],
-            "return": DslType.DATAFRAME,
-        },
-        "cs_rank": {
-            "args": [Arg(DslType.DATAFRAME)],
-            "return": DslType.DATAFRAME,
-        },
+        "ts_zscore": [
+            {
+                "args": [Arg(DslType.DATAFRAME), Arg(DslType.INT)],
+                "return": DslType.DATAFRAME,
+            }
+        ],
+        "cs_rank": [
+            {
+                "args": [Arg(DslType.DATAFRAME)],
+                "return": DslType.DATAFRAME,
+            }
+        ],
     }
     return factor_schema, function_schema
 
@@ -57,10 +61,17 @@ def runtime_env() -> tuple[
         for factor_str in ["open", "high", "low", "close", "volume"]
     }
 
-    # Mock mathematical functions
+    # Mock mathematical functions (each name -> list of (callable, params) overloads).
     functions = {
-        "ts_zscore": lambda df, window: f"ZSCORE({df}, {window})",
-        "cs_rank": lambda df: f"RANK({df})",
+        "ts_zscore": [
+            (
+                lambda df, window: f"ZSCORE({df}, {window})",
+                [Arg(DslType.DATAFRAME), Arg(DslType.INT)],
+            )
+        ],
+        "cs_rank": [
+            (lambda df: f"RANK({df})", [Arg(DslType.DATAFRAME)]),
+        ],
     }
 
     return data_loaders, functions, fetched_data
