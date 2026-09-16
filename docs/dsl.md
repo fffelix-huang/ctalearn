@@ -30,15 +30,23 @@ Rules:
 - **Numbers:** integer (`20`) or decimal (`1.5`) literals only. No exponent form
   (`1e5`) — the int/float split is a simple "has a dot?" check, which also keeps
   the type checker honest about `int` vs `float` parameters.
+- **Strings:** double-quoted, single line (`"scores"`, `""`). No escapes — a
+  string ends at the first `"`, so it can't contain one. Single quotes aren't
+  strings. `#` inside a string is literal, not a comment. Strings can only be
+  assigned (`mode = "scores";`) and passed as function arguments; no operators
+  apply to them.
 - **No bool literals.** Operators with `bool` parameters expose them with their
   Python default; they can't be set from the DSL.
 - **Comments:** `#` to end of line. Whitespace and newlines are insignificant.
 
 ### Types
 
-Static type checking uses three virtual types ([`DslType`](api/dsl.md)):
-`DataFrame`, `float`, `int`. A binary op touching a `DataFrame`
-broadcasts to `DataFrame`; otherwise `float` wins over `int`. Passing a `float`
+Static type checking uses four virtual types ([`DslType`](api/dsl.md)):
+`DataFrame`, `float`, `int`, `str`. Arithmetic is defined only on `DataFrame`,
+`float` and `int` — using `+ - * /` or unary `-` on any other type (e.g. a `str`)
+is a type error. A binary op touching a `DataFrame`
+broadcasts to `DataFrame`; otherwise `float` wins over `int`. A `str` argument
+matches only a `str` parameter (no coercion either way). Passing a `float`
 where an `int` is required (e.g. a window length) is a type error caught before
 any data is touched. (There's no `bool` type — the grammar has no bool literal,
 and operators' `bool` params fall back to their Python defaults.)

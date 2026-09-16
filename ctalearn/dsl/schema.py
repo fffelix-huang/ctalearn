@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from ctalearn.dsl.exceptions import DslTypeError
+
 
 class DslType(Enum):
     """Enumeration of supported virtual data types in the DSL."""
@@ -9,7 +11,12 @@ class DslType(Enum):
     DATAFRAME = "DataFrame"
     FLOAT = "float"
     INT = "int"
+    STRING = "str"
 
+
+# Allowlist, not a denylist: a DslType added later gets no arithmetic until it
+# is deliberately listed here.
+_ARITHMETIC_TYPES = frozenset({DslType.DATAFRAME, DslType.FLOAT, DslType.INT})
 
 _MISSING: Any = object()
 
@@ -59,6 +66,33 @@ def match_signature(params: list[Arg], actual: list[DslType]) -> bool:
     return True
 
 
+def _check_arithmetic(*operand_types: DslType) -> None:
+    """Reject operands whose type has no arithmetic defined.
+
+    Raises:
+        DslTypeError: If any operand type is not in `_ARITHMETIC_TYPES`.
+    """
+    for operand_type in operand_types:
+        if operand_type not in _ARITHMETIC_TYPES:
+            raise DslTypeError(f"Arithmetic is not supported on {operand_type.value}")
+
+
+def resolve_neg_type(operand: DslType) -> DslType:
+    """Resolve the resulting type of a unary negation.
+
+    Args:
+        operand: The DSL type of the operand.
+
+    Returns:
+        The operand type (negation preserves type).
+
+    Raises:
+        DslTypeError: If the operand type has no arithmetic defined.
+    """
+    _check_arithmetic(operand)
+    return operand
+
+
 def resolve_binop_type(left: DslType, right: DslType) -> DslType:
     """Resolve the resulting type of a binary operation.
 
@@ -71,7 +105,11 @@ def resolve_binop_type(left: DslType, right: DslType) -> DslType:
 
     Returns:
         The resulting DSL type of the binary operation.
+
+    Raises:
+        DslTypeError: If either operand type has no arithmetic defined.
     """
+    _check_arithmetic(left, right)
     if left == DslType.DATAFRAME or right == DslType.DATAFRAME:
         return DslType.DATAFRAME
 

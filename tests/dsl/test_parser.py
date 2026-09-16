@@ -56,3 +56,16 @@ class TestParser:
             parser.parse("return close * 1e5;")
         with pytest.raises(Exception):
             parser.parse("return close * 1e-8;")
+
+    def test_string_literals(self) -> None:
+        """Double-quoted strings parse as assignments and function args."""
+        parser.parse('s = "xyz"; return f(close, s, "");')
+
+    def test_string_invalid_forms_rejected(self) -> None:
+        """Single-quoted, multi-line, and unterminated strings are syntax errors."""
+        with pytest.raises(Exception):
+            parser.parse("return f(close, 'xyz');")
+        with pytest.raises(Exception):
+            parser.parse('return f(close, "a\nb");')
+        with pytest.raises(Exception):
+            parser.parse('return f(close, "xyz);')

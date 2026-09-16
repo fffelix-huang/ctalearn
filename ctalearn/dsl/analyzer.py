@@ -3,7 +3,12 @@ from typing import Any
 from lark import Token, Transformer, v_args
 
 from ctalearn.dsl.exceptions import DslTypeError
-from ctalearn.dsl.schema import DslType, match_signature, resolve_binop_type
+from ctalearn.dsl.schema import (
+    DslType,
+    match_signature,
+    resolve_binop_type,
+    resolve_neg_type,
+)
 
 
 @v_args(inline=True)
@@ -32,6 +37,10 @@ class TypeCheckTransformer(Transformer[Any, DslType]):
     def number(self, token: Token) -> DslType:
         """Infer the type of a numeric token."""
         return DslType.FLOAT if "." in token.value else DslType.INT
+
+    def string(self, token: Token) -> DslType:
+        """Infer the type of a string literal token."""
+        return DslType.STRING
 
     def variable(self, token: Token) -> DslType:
         """Infer the type of a variable token.
@@ -83,7 +92,7 @@ class TypeCheckTransformer(Transformer[Any, DslType]):
 
     def neg(self, val_type: DslType) -> DslType:
         """Infer the return type for a negation operation."""
-        return val_type
+        return resolve_neg_type(val_type)
 
     def func_call(self, func_name_token: Token, *args_types: DslType) -> DslType:
         """Resolve overloads and infer the return type of a function call.

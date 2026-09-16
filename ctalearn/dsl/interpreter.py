@@ -24,6 +24,8 @@ def _py_to_dsl(value: Any) -> DslType:
         return DslType.INT
     if isinstance(value, float):
         return DslType.FLOAT
+    if isinstance(value, str):
+        return DslType.STRING
     raise DslRuntimeError(f"Unsupported runtime type: {type(value).__name__}")
 
 
@@ -52,6 +54,10 @@ class ExecutionTransformer(Transformer[Any, Any]):
     def number(self, token: Token) -> float | int:
         """Parse a numeric token into a float or integer."""
         return float(token.value) if "." in token.value else int(token.value)
+
+    def string(self, token: Token) -> str:
+        """Parse a string literal token, stripping the surrounding quotes."""
+        return str(token.value)[1:-1]
 
     def variable(self, token: Token) -> Any:
         """Resolve a variable by fetching from local cache or triggering data loaders.

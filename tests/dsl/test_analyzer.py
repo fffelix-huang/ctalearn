@@ -211,3 +211,95 @@ class TestAnalyzer:
             """
         )
         assert checker2.transform(tree) == DslType.DATAFRAME
+
+    def test_string_arg_typechecks(self) -> None:
+        """String literals and string variables satisfy a STRING parameter."""
+        factor_schema = {"close": DslType.DATAFRAME}
+        func_schema = {
+            "f": [
+                {
+                    "args": [Arg(DslType.DATAFRAME), Arg(DslType.STRING)],
+                    "return": DslType.DATAFRAME,
+                }
+            ]
+        }
+        checker = TypeCheckTransformer(factor_schema, func_schema)
+
+        code = """
+            s = "scores";
+            x = f(close, "");
+            return f(x, s);
+        """
+        assert checker.transform(parser.parse(code)) == DslType.DATAFRAME
+
+    @pytest.mark.parametrize(
+        "param_type, arg",
+        [
+            (DslType.INT, '"5"'),
+            (DslType.FLOAT, '"1.5"'),
+            (DslType.DATAFRAME, '"close"'),
+            (DslType.STRING, "5"),
+            (DslType.STRING, "1.5"),
+            (DslType.STRING, "close"),
+        ],
+    )
+    def test_string_no_coercion(self, param_type: DslType, arg: str) -> None:
+        """STRING matches only STRING: no coercion to or from other types."""
+        factor_schema = {"close": DslType.DATAFRAME}
+        func_schema = {"f": [{"args": [Arg(param_type)], "return": DslType.DATAFRAME}]}
+        checker = TypeCheckTransformer(factor_schema, func_schema)
+
+        with pytest.raises(VisitError) as exc_info:
+            checker.transform(parser.parse(f"return f({arg});"))
+
+        assert isinstance(exc_info.value.orig_exc, DslTypeError)
+        assert "No matching overload for 'f'" in str(exc_info.value.orig_exc)
+
+    def test_host_string_factor(self) -> None:
+        """A host factor declared STRING is usable as a STRING argument."""
+        factor_schema = {"close": DslType.DATAFRAME, "mode": DslType.STRING}
+        func_schema = {
+            "f": [
+                {
+                    "args": [Arg(DslType.DATAFRAME), Arg(DslType.STRING)],
+                    "return": DslType.DATAFRAME,
+                }
+            ]
+        }
+        checker = TypeCheckTransformer(factor_schema, func_schema)
+
+        tree = parser.parse("return f(close, mode);")
+        assert checker.transform(tree) == DslType.DATAFRAME
+
+    def test_string_return_rejected(self) -> None:
+        """A program may not return a string."""
+        checker = TypeCheckTransformer({}, {})
+
+        with pytest.raises(VisitError) as exc_info:
+            checker.transform(parser.parse('return "a";'))
+
+        assert isinstance(exc_info.value.orig_exc, DslTypeError)
+        assert "Return type should be DataFrame, got str" in str(
+            exc_info.value.orig_exc
+        )
+
+    @pytest.mark.parametrize(
+        "code",
+        [
+            'x = "a" + 1;',
+            'x = close * "a";',
+            's = "a"; x = s - s;',
+            's = "a"; x = close / s;',
+            'x = -"a";',
+            's = "a"; x = -s;',
+        ],
+    )
+    def test_string_arithmetic_rejected(self, code: str) -> None:
+        """Operators are defined only for numeric/DataFrame operands."""
+        checker = TypeCheckTransformer({"close": DslType.DATAFRAME}, {})
+
+        with pytest.raises(VisitError) as exc_info:
+            checker.transform(parser.parse(code + " return close;"))
+
+        assert isinstance(exc_info.value.orig_exc, DslTypeError)
+        assert "Arithmetic is not supported on str" in str(exc_info.value.orig_exc)

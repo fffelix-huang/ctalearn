@@ -151,11 +151,11 @@ class TestInterpreter:
             _py_to_dsl(True)
 
     def test_py_to_dsl_rejects_unknown_type(self) -> None:
-        """Non-numeric, non-DataFrame runtime value is rejected."""
+        """A runtime value with no DslType counterpart is rejected."""
         from ctalearn.dsl.interpreter import _py_to_dsl
 
         with pytest.raises(DslRuntimeError, match="Unsupported runtime type"):
-            _py_to_dsl("not a dsl value")
+            _py_to_dsl(["not a dsl value"])
 
     def test_arithmetic_operators(self) -> None:
         """+, -, *, / and unary - execute on DataFrame operands (the DSL's type)."""
@@ -222,3 +222,71 @@ class TestInterpreter:
 
         assert isinstance(exc_info.value.orig_exc, DslRuntimeError)
         assert "Failed to execution function 'cs_rank'" in str(exc_info.value.orig_exc)
+
+    def test_string_args_passed_unquoted(self) -> None:
+        """Functions receive string literals/variables as `str`, quotes stripped."""
+        received: list[Any] = []
+
+        def f(df: Any, s: Any) -> Any:
+            received.append(s)
+            return df
+
+        functions = {"f": [(f, [Arg(DslType.DATAFRAME), Arg(DslType.STRING)])]}
+        data_loaders = {"close": lambda: _make_df([1.0])}
+        code = """
+            s = "scores";
+            x = f(close, "");
+            y = f(x, "a#b");
+            return f(y, s);
+        """
+        ExecutionTransformer(functions, data_loaders).transform(parser.parse(code))
+
+        assert received == ["", "a#b", "scores"]
+
+    def test_overload_dispatch_on_string(self) -> None:
+        """Multi-overload runtime: a `str` arg dispatches to the STRING overload."""
+        calls: list[tuple[str, Any]] = []
+
+        def by_int(df: Any, n: Any) -> Any:
+            calls.append(("int", n))
+            return df
+
+        def by_str(df: Any, s: Any) -> Any:
+            calls.append(("str", s))
+            return df
+
+        functions = {
+            "f": [
+                (by_int, [Arg(DslType.DATAFRAME), Arg(DslType.INT)]),
+                (by_str, [Arg(DslType.DATAFRAME), Arg(DslType.STRING)]),
+            ]
+        }
+        data_loaders = {"close": lambda: _make_df([1.0])}
+        code = 'x = f(close, 3); return f(x, "3");'
+        ExecutionTransformer(functions, data_loaders).transform(parser.parse(code))
+
+        assert calls == [("int", 3), ("str", "3")]
+
+    def test_data_loader_string(self) -> None:
+        """A host loader may return a `str`, usable as a STRING argument.
+
+        Two overloads force runtime dispatch, so the loaded `str` must map to STRING.
+        """
+        received: list[Any] = []
+
+        def f(df: Any, s: Any) -> Any:
+            received.append(s)
+            return df
+
+        functions = {
+            "f": [
+                (f, [Arg(DslType.DATAFRAME), Arg(DslType.STRING)]),
+                (f, [Arg(DslType.DATAFRAME), Arg(DslType.INT)]),
+            ]
+        }
+        data_loaders = {"close": lambda: _make_df([1.0]), "mode": lambda: "scores"}
+        ExecutionTransformer(functions, data_loaders).transform(
+            parser.parse("return f(close, mode);")
+        )
+
+        assert received == ["scores"]
